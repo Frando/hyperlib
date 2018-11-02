@@ -1,0 +1,31 @@
+{
+  "name": "hyperlib",
+  "version": "0.1.0",
+  "description": "Manage hyperdb-based archives.",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Frando/hyperlib.git"
+  },
+  "keywords": [
+    "hyperdb",
+    "dat",
+    "hyperdrive"
+  ],
+  "author": "Franz Heinzmann <Frando>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Frando/hyperlib/issues"
+  },
+  "homepage": "https://github.com/Frando/hyperlib#readme",
+  "dependencies": {
+    "dat-encoding": "^5.0.1",
+    "hypercore-crypto": "^1.0.0",
+    "hyperdiscovery": "^8.0.0",
+    "inherits": "^2.0.3",
+    "thunky": "^1.0.3"
+  }
+}
