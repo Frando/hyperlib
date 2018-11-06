@@ -1,6 +1,6 @@
 {
   "name": "hyperlib",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Manage hyperdb-based archives.",
   "main": "index.js",
   "scripts": {
