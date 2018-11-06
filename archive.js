@@ -52,12 +52,12 @@ Archive.prototype._ready = async function (done) {
 Archive.prototype.makePersistentMount = async function (type, prefix, key, opts) {
   await this.ready()
   if (!this.isAuthorized()) throw new Error('Archive is not writable.')
-  const archive = await this.addMount(type, prefix, key, opts)
+  const archive = await this.addMount({ type, prefix, key, opts })
   await this.instance.addMount({ type, prefix, key: archive.key })
   return archive
 }
 
-Archive.prototype.addMount = async function (type, prefix, key, opts) {
+Archive.prototype.addMount = async function ({ type, prefix, key, opts }) {
   // todo: handle opts?
   opts = opts || {}
   const status = {
