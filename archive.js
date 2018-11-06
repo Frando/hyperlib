@@ -34,12 +34,12 @@ Archive.prototype._ready = async function (done) {
 
     self.db.once('remote-update', () => self.setState({ loaded: true }))
 
-    // let db = this.getInstance().db
-    // let localWriterKey = db.local.key
-    // db.authorized(localWriterKey, (err, res) => {
-    //   if (err) throw err
-    //   if (res) self.setState({ authorized: true })
-    // })
+    let db = this.getInstance().db
+    let localWriterKey = db.local.key
+    db.authorized(localWriterKey, (err, res) => {
+      if (err) throw err
+      if (res) self.setState({ authorized: true })
+    })
 
     if (self.getState().share) {
       self.startShare()
@@ -52,10 +52,8 @@ Archive.prototype._ready = async function (done) {
 Archive.prototype.makePersistentMount = async function (type, prefix, key, opts) {
   await this.ready()
   if (!this.isAuthorized()) throw new Error('Archive is not writable.')
-
   const archive = await this.addMount(type, prefix, key, opts)
-  const mountInfo = { prefix, type, key: archive.key }
-  await this.instance.addMount(mountInfo)
+  await this.instance.addMount({ type, prefix, key: archive.key })
   return archive
 }
 
