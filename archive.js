@@ -148,6 +148,7 @@ Archive.prototype.setShare = async function (share) {
   if (share) {
     this.startShare()
   }
+  return
 }
 
 Archive.prototype.startShare = async function () {
@@ -162,6 +163,15 @@ Archive.prototype.startShare = async function () {
   let mounts = await this.getMounts()
   mounts.forEach(mount => {
     mount.startShare()
+  })
+}
+
+Archive.prototype.stopShare = async function () {
+  await this.ready()
+  if (this.network) this.network.close()
+  let mounts = await this.getMounts()
+  mounts.forEach(mount => {
+    mount.closeRemoteConnections()
   })
 }
 
