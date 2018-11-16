@@ -147,6 +147,8 @@ Archive.prototype.setShare = async function (share) {
   this.setState({ share })
   if (share) {
     this.startShare()
+  } else {
+    this.stopShare()
   }
   return
 }
@@ -157,9 +159,10 @@ Archive.prototype.startShare = async function () {
   // todo: make pluggable.
   const network = hyperdiscovery(instance.db)
   this.network = network
-  network.on('connection', (peer) => console.log('got peer!'))
+  this.emit('networkOpened', true)
+  network.on('connection', (peer) => this.emit('got peer', network.connected))
 
-  // todo: really always share all mounts?
+  // todo: really always share all mounts? If decided compare with this.stopShare()!
   let mounts = await this.getMounts()
   mounts.forEach(mount => {
     mount.startShare()
@@ -168,10 +171,13 @@ Archive.prototype.startShare = async function () {
 
 Archive.prototype.stopShare = async function () {
   await this.ready()
-  if (this.network) this.network.close()
+  if (this.network) {
+    this.network.close()
+    this.emit('networkClosed', true)
+  }
   let mounts = await this.getMounts()
   mounts.forEach(mount => {
-    mount.closeRemoteConnections()
+    mount.stopShare()
   })
 }
 
