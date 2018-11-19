@@ -7,60 +7,79 @@ require('leaked-handles').set({
 const tape = require('tape')
 const ram = require('random-access-memory')
 
-const { Library, Archive, HyperdriveWrapper } = require('..')
+const Library = require('../library')
+const Archive = require('../archive')
+const HyperdriveWrapper = require('../wrappers/hyperdrive')
+const Hyperdrive = HyperdriveWrapper(ram)
 
-tape('basic hyperlib behaviour', async (t) => {
-  const Hyperdrive = HyperdriveWrapper(ram)
-  /* Test super basic HyperdriveWrapper properties */
+tape('basic HyperdriveWrapper', async (t) => {
   t.equal(typeof(Hyperdrive),'object')
   t.equal(typeof(Hyperdrive.hyperdrive),'object')
   t.equal(typeof(Hyperdrive.hyperdrive.db),'object')
+  t.equal(typeof(Hyperdrive.setInfo), 'function')
+  t.end()
+})
 
-  /***************************/
-  /* Test creating a Library */
+tape('create Library and register HyperdriveWrapper as archiveType', async (t) => {
   const lib0 = Library(ram)
   t.deepEqual(lib0.archiveTypes, {})
   opts = { archiveTypes: Hyperdrive }
   const lib1 = Library(ram, opts)
   t.deepEqual(lib1.ready(), {})
   t.deepEqual(lib1.archiveTypes, Hyperdrive)
+  t.end()
+})
 
-  t.equal(typeof(lib1.getArchiveConstructor('hyperdrive')), 'function')
+tape('library: getArchiveConstructor', async (t) => {
+  const lib = Library(ram, { archiveTypes: Hyperdrive })
+
+  t.equal(typeof(lib.getArchiveConstructor('hyperdrive')), 'function')
   let errThrown = false
   try {
-    lib1.getArchiveConstructor('foo')
+    lib.getArchiveConstructor('foo')
   } catch (err) {
     t.deepEqual(err, Error('Archive type foo not registered.'))
     errThrown = true
   }
-  t.equal(errThrown, true, 'lib1.getArchiveConstructor("foo") is expected to throw an Error')
+  t.equal(errThrown, true, 'library.getArchiveConstructor("foo") is expected to throw an Error')
+  t.end()
+})
 
-  /****************************/
-  /* Test creating an Archive */
-  const archive1 = await lib1.createArchive('hyperdrive')
-  t.equal(typeof(archive1), 'object')
-  t.equal(typeof(archive1.key), 'string')
-  t.equal(archive1.key.length, 64)
-  t.deepEqual(archive1, lib1.archives[archive1.key])
+tape('library: createArchive', async (t) => {
+  const lib = Library(ram, { archiveTypes: Hyperdrive })
+  const archive = await lib.createArchive('hyperdrive')
+  t.equal(typeof(archive), 'object')
+  t.equal(typeof(archive.key), 'string')
+  t.equal(archive.key.length, 64)
+  t.deepEqual(archive, lib.archives[archive.key])
+  t.end()
+})
 
-  /**********************************************************/
-  /* Test other library functions except addRemoteArchive() */
-  t.deepEqual(lib1.getArchive(archive1.key), archive1)
-  const archive2 = await lib1.createArchive('hyperdrive')
+tape('library: various getArchive-functions', async (t) => {
+  const lib = Library(ram, { archiveTypes: Hyperdrive })
+
+  const archive1 = await lib.createArchive('hyperdrive')
+  t.deepEqual(lib.getArchive(archive1.key), archive1)
+
+  const archive2 = await lib.createArchive('hyperdrive')
   let archives = {}
   archives[archive1.key] = archive1
   archives[archive2.key] = archive2
-  t.deepEqual(lib1.getArchives(), archives)
-  t.deepEqual(lib1.getArchiveInstance(archive1.key), archive1.instance)
-  const archive3 = await lib1.createArchive('hyperdrive', {}, { primary: false })
+  t.deepEqual(lib.getArchives(), archives)
+  t.deepEqual(lib.getArchiveInstance(archive1.key), archive1.instance)
+
+  const archive3 = await lib.createArchive('hyperdrive', {}, { primary: false })
   t.deepEqual(archive3.getState(), { primary: false, parent: null, authorized: true, loaded: true, share: false } )
-  const primaryArchives = await lib1.getPrimaryArchives()
+  const primaryArchives = await lib.getPrimaryArchives()
   t.deepEqual(primaryArchives, [archive1, archive2])
+  t.end()
+})
 
-  /***************************/
-  /* Test sharing an Archive */
+tape('library & archive: sharing archives', async (t) => {
+  const lib1 = Library(ram, { archiveTypes: Hyperdrive })
+  const archive1 = await lib1.createArchive('hyperdrive')
+  const libB = Library(ram, { archiveTypes: Hyperdrive })
 
-  const libB = Library(ram, opts)
   t.equal(typeof(libB.addRemoteArchive), 'function')
   archiveB = await libB.addRemoteArchive('hyperdrive', archive1.key)
   t.deepEqual(archiveB.getState(), { primary: true, parent: null, authorized: false, loaded: false, share: true })
@@ -122,3 +141,29 @@ tape('basic hyperlib behaviour', async (t) => {
 
   t.end()
 })
+
+
+/*
+tape('library: various getArchive-functions', async (t) => {
+  console.log('archive1.instance.addMount', archive1.instance.addMount)
+  try {
+    const archive1a = await archive1.makePersistentMount('hyperdrive')
+  } catch (err) {
+    console.log(err)
+  }
+  t.equal(typeof(archive1a), 'object', 'Has a hyperdrive been mounted to archive as subarchive?')
+
+  let archive1Info = await archive1.getInfo()
+  t.deepEqual(archive1Info, {})
+  await archive1.setInfo({ foo: 'bar' })
+  let timeout = setTimeout( async () => {
+    try {
+      archive1Info = await archive1.getInfo()
+    } catch (err) {
+      archive1Info = err
+    }
+    t.deepEqual(archive1Info, { foo: 'bar' } || Error('Hyperdrive has not any setInfo()'))
+  }, 500)
+  t.end()
+})
+*/
