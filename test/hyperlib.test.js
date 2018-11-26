@@ -1,10 +1,8 @@
-/*
 require('leaked-handles').set({
     fullStack: true, // use full stack traces
     timeout: 5000, // run every 30 seconds instead of 5.
     debugSockets: true // pretty print tcp thrown exceptions.
 });
-*/
 
 const tape = require('tape')
 const ram = require('random-access-memory')
@@ -79,7 +77,7 @@ tape('library: various getArchive-functions', async (t) => {
   t.end()
 })
 
-tape.only('library & archive: sharing archives', async (t) => {
+tape('library & archive: sharing archives', async (t) => {
   const lib1 = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
   const archive1 = await lib1.createArchive('hyperdrive')
   const libB = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
@@ -125,7 +123,7 @@ tape.only('library & archive: sharing archives', async (t) => {
   await archive1.getMounts()
   await archiveB.getMounts()
 
-  t.equal(typeof(archive1.setShare), 'function')
+  t.equal(typeof(archive1.setShare), 'function', 'is archive.setShare() defined as function?')
   await archive1.setShare(true)
   t.deepEqual(
     await archive1.getState(),
@@ -133,7 +131,7 @@ tape.only('library & archive: sharing archives', async (t) => {
     'Does archive.setShare() result in archive.state.shared = true'
   )
 
-  t.equal(archiveB.isAuthorized(), false, 'is newly added archive unauthorized?')
+  t.equal(await archiveB.isAuthorized(), false, 'is newly added archive unauthorized?')
 
   let buf1
   archiveB.instance.writeFile('/foo.txt', 'bar', (err) => {
@@ -161,13 +159,7 @@ tape.only('library & archive: sharing archives', async (t) => {
     })
   })
 
-  await archiveB.setState({ loaded: false })
-  archiveB._loaded = false
-  console.log(archiveB._loaded, archiveB.state.loaded)
-  await archiveB.ready()
-  console.log(archiveB.state.loaded, archiveB.state.authorized)
-
-  let timer = setTimeout(() => {
+  let timer = setTimeout(async () => {
     archive1.instance.readdir('/', (err, list) => {
       if (err) throw err
       archive1.instance.readFile('/foo.txt', 'utf-8', (err, data) => {
@@ -175,16 +167,17 @@ tape.only('library & archive: sharing archives', async (t) => {
       })
       archive1.instance.readFile('/hello.txt', 'utf-8', (err, data) => {
         t.equal(buf2, data, 'data synced from authorized archive to authorizing archive?')
-        t.equal(archiveB.isAuthorized(), true, 'Is authorization-information synced from authorizing to authorized archive?')
       })
     })
+    t.equal(await archiveB.isAuthorized(), true, 'Is authorization-information synced from authorizing to authorized archive?')
   }, 250)
 
   let timer1 = setTimeout(() => {
     t.deepEqual(
       archiveB.getState(),
       { primary: true, parent: null, authorized: true, loaded: true, share: true, localKey: datenc.toStr(archiveB.db.local.key) },
-      'Does ArchiveB state match the performed tasks?')
+      'Does ArchiveB state match the performed tasks?'
+    )
   }, 500)
 
   let interval = setInterval(() => {
@@ -224,8 +217,10 @@ tape('archive: mounts', async (t) => {
 
   const archive01 = await archive.makePersistentMount('hyperdrive')
   t.equal(typeof(archive01), 'object', 'Has a hyperdrive been mounted to archive as subarchive?')
+  await archive01.isAuthorized()
   t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: false, share: false, localKey: archive01.key } )
   await archive01.ready()
+  console.log(archive01._loaded)
   t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: true, share: false, localKey: archive01.key } )
 
   archive.loadMounts() // no return value
