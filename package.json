@@ -4,7 +4,8 @@
   "description": "Manage hyperdb-based archives.",
   "main": "index.js",
   "scripts": {
-    "test": "tape test/*.js"
+    "test": "tape test/*.js",
+    "coverage": "nyc tape test/*.js; nyc report --reporter=html"
   },
   "repository": {
     "type": "git",
