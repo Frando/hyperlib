@@ -35,16 +35,19 @@ Archive.prototype._ready = async function (done) {
     self.db.once('remote-update', () => self.setState({ loaded: true }))
 
     // todo: This throws with "Decoded message not valid"
-    // let db = this.getInstance().db
-    // let localWriterKey = db.local.key
-    // db.authorized(localWriterKey, (err, res) => {
-    //   if (err) throw err
-    //   if (res) self.setState({ authorized: true })
-    // })
+    let db = this.getInstance().db
+    let localWriterKey = db.local.key
+    db.authorized(localWriterKey, (err, res) => {
+      console.log('at db.authorized', res)
+      if (err) throw err
+      if (res) self.setState({ authorized: true })
+    })
 
     if (self.getState().share) {
       self.startShare()
     }
+
+    this.state.localKey = datenc.toStr(this.db.local.key)
 
     done()
   })

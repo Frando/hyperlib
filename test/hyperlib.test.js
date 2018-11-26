@@ -1,11 +1,15 @@
+/*
 require('leaked-handles').set({
     fullStack: true, // use full stack traces
-    timeout: 10000, // run every 30 seconds instead of 5.
+    timeout: 5000, // run every 30 seconds instead of 5.
     debugSockets: true // pretty print tcp thrown exceptions.
 });
+*/
 
 const tape = require('tape')
 const ram = require('random-access-memory')
+const datenc = require('dat-encoding')
+const fs = require('fs')
 
 const Library = require('../library')
 const Archive = require('../archive')
@@ -23,15 +27,15 @@ tape('basic HyperdriveWrapper', async (t) => {
 tape('create Library and register HyperdriveWrapper as archiveType', async (t) => {
   const lib0 = Library(ram)
   t.deepEqual(lib0.archiveTypes, {})
-  opts = { archiveTypes: Hyperdrive }
+  opts = { archiveTypes: { hyperdrive: Hyperdrive } }
   const lib1 = Library(ram, opts)
   t.deepEqual(lib1.ready(), {})
-  t.deepEqual(lib1.archiveTypes, Hyperdrive)
+  t.deepEqual(lib1.archiveTypes['hyperdrive'], Hyperdrive)
   t.end()
 })
 
 tape('library: getArchiveConstructor', async (t) => {
-  const lib = Library(ram, { archiveTypes: Hyperdrive })
+  const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
 
   t.equal(typeof(lib.getArchiveConstructor('hyperdrive')), 'function')
   let errThrown = false
@@ -46,7 +50,7 @@ tape('library: getArchiveConstructor', async (t) => {
 })
 
 tape('library: createArchive', async (t) => {
-  const lib = Library(ram, { archiveTypes: Hyperdrive })
+  const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
   const archive = await lib.createArchive('hyperdrive')
   t.equal(typeof(archive), 'object')
   t.equal(typeof(archive.key), 'string')
@@ -56,7 +60,7 @@ tape('library: createArchive', async (t) => {
 })
 
 tape('library: various getArchive-functions', async (t) => {
-  const lib = Library(ram, { archiveTypes: Hyperdrive })
+  const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
 
   const archive1 = await lib.createArchive('hyperdrive')
   t.deepEqual(lib.getArchive(archive1.key), archive1)
@@ -75,10 +79,10 @@ tape('library: various getArchive-functions', async (t) => {
   t.end()
 })
 
-tape('library & archive: sharing archives', async (t) => {
-  const lib1 = Library(ram, { archiveTypes: Hyperdrive })
+tape.only('library & archive: sharing archives', async (t) => {
+  const lib1 = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
   const archive1 = await lib1.createArchive('hyperdrive')
-  const libB = Library(ram, { archiveTypes: Hyperdrive })
+  const libB = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
 
   t.equal(typeof(libB.addRemoteArchive), 'function')
   archiveB = await libB.addRemoteArchive('hyperdrive', archive1.key)
@@ -116,43 +120,131 @@ tape('library & archive: sharing archives', async (t) => {
     networkEvents.archiveB.closed = e
   })
 
+  // For what ever reason, network handles leak without this calls.
+  // TODO: Correct this behaviour
+  await archive1.getMounts()
+  await archiveB.getMounts()
+
   t.equal(typeof(archive1.setShare), 'function')
   await archive1.setShare(true)
-  t.deepEqual(await archive1.getState(), { primary: true, parent: null, authorized: true, loaded: true, share: true })
+  t.deepEqual(
+    await archive1.getState(),
+    { primary: true, parent: null, authorized: true, loaded: true, share: true, localKey: archive1.key },
+    'Does archive.setShare() result in archive.state.shared = true'
+  )
+
+  t.equal(archiveB.isAuthorized(), false, 'is newly added archive unauthorized?')
+
+  let buf1
+  archiveB.instance.writeFile('/foo.txt', 'bar', (err) => {
+    if (err) throw err
+    archiveB.instance.readdir('/', (err, list) => {
+      if (err) throw err
+      archiveB.instance.readFile('/foo.txt', 'utf-8', (err, data) => {
+        if (err) throw err
+        buf1 = data
+      })
+    })
+  })
+
+  await archive1.authorizeWriter(await datenc.toStr(archiveB.db.local.key))
+
+  let buf2
+  archiveB.instance.writeFile('/hello.txt', 'world', (err) => {
+    if (err) throw err
+    archiveB.instance.readdir('/', (err, list) => {
+      if (err) throw err
+      archiveB.instance.readFile('/hello.txt', 'utf-8', (err, data) => {
+        if (err) throw err
+        buf2 = data
+      })
+    })
+  })
+
+  await archiveB.setState({ loaded: false })
+  archiveB._loaded = false
+  console.log(archiveB._loaded, archiveB.state.loaded)
+  await archiveB.ready()
+  console.log(archiveB.state.loaded, archiveB.state.authorized)
+
+  let timer = setTimeout(() => {
+    archive1.instance.readdir('/', (err, list) => {
+      if (err) throw err
+      archive1.instance.readFile('/foo.txt', 'utf-8', (err, data) => {
+        t.equal(buf1, data, 'data synced from authorized archive to authorizing archive?')
+      })
+      archive1.instance.readFile('/hello.txt', 'utf-8', (err, data) => {
+        t.equal(buf2, data, 'data synced from authorized archive to authorizing archive?')
+        t.equal(archiveB.isAuthorized(), true, 'Is authorization-information synced from authorizing to authorized archive?')
+      })
+    })
+  }, 250)
 
   let timer1 = setTimeout(() => {
-    t.deepEqual(archiveB.getState(), { primary: true, parent: null, authorized: false, loaded: true, share: true })
+    t.deepEqual(
+      archiveB.getState(),
+      { primary: true, parent: null, authorized: true, loaded: true, share: true, localKey: datenc.toStr(archiveB.db.local.key) },
+      'Does ArchiveB state match the performed tasks?')
   }, 500)
 
   let interval = setInterval(() => {
-    if (archiveB.getState().loaded === true) {
+    if (archive1.getState().loaded === true && archiveB.getState().loaded === true) {
       archive1.setShare(false)
       archiveB.setShare(false)
+      clearInterval(interval)
     }
-    clearInterval(interval)
-  }, 500)
+  }, 1000)
 
   let timer2 = setTimeout(() => {
     t.deepEqual(networkEvents,
       { archive1: { opened: true, peers: 1, closed: true },
         archiveB: { opened: true, peers: 1, closed: true } }
       , 'Were archive networks opened, closed and "got peer"-events fired?')
-  }, 1000)
+  }, 3000)
 
   t.end()
 })
 
+tape('archive: info', async (t) => {
+  const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
+  archive = await lib.createArchive('hyperdrive')
 
-/*
-tape('library: various getArchive-functions', async (t) => {
-  console.log('archive1.instance.addMount', archive1.instance.addMount)
-  try {
-    const archive1a = await archive1.makePersistentMount('hyperdrive')
-  } catch (err) {
-    console.log(err)
-  }
-  t.equal(typeof(archive1a), 'object', 'Has a hyperdrive been mounted to archive as subarchive?')
+  await archive.setInfo({ foo: 'bar' })
+  const info = await archive.getInfo()
+  t.equal(info['foo'] && info['foo']==='bar', true)
+  t.end()
+})
 
+tape('archive: mounts', async (t) => {
+  const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
+  archive = await lib.createArchive('hyperdrive')
+
+  let mounts = await archive.getMounts()
+  t.deepEqual(mounts, [])
+
+  const archive01 = await archive.makePersistentMount('hyperdrive')
+  t.equal(typeof(archive01), 'object', 'Has a hyperdrive been mounted to archive as subarchive?')
+  t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: false, share: false, localKey: archive01.key } )
+  await archive01.ready()
+  t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: true, share: false, localKey: archive01.key } )
+
+  archive.loadMounts() // no return value
+
+  mounts = await archive.getMounts()
+  const mountPrefix= mounts[0].prefix
+  t.notEqual(mountPrefix, undefined, 'Does mount have a defined prefix?')
+  const mount = await archive.getMount(mountPrefix)
+  t.deepEqual([Object.keys(mounts[0]), mounts[0].key], [Object.keys(mount), mount.key], 'Do getMounts and getMount return same kind of objects?')
+
+  const mountInstance = archive01.getMountInstance(mountPrefix)
+  t.notDeepEqual(mountInstance, {})
+  t.equal(mountInstance instanceof HyperdriveWrapper, true)
+
+  t.equal(archive01.isPrimary(), false)
+  archive01.setState({ primary: true })
+  t.equal(archive01.isPrimary(), true)
+
+  /*
   let archive1Info = await archive1.getInfo()
   t.deepEqual(archive1Info, {})
   await archive1.setInfo({ foo: 'bar' })
@@ -164,6 +256,6 @@ tape('library: various getArchive-functions', async (t) => {
     }
     t.deepEqual(archive1Info, { foo: 'bar' } || Error('Hyperdrive has not any setInfo()'))
   }, 500)
+  */
   t.end()
 })
-*/
