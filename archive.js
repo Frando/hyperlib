@@ -32,13 +32,16 @@ Archive.prototype._ready = async function (done) {
     self._loaded = true
     await self.loadMounts()
 
+    // Question: What is state.loaded supposed to indicate?
+    // As I (matze) understand the code, the following line is only
+    // executed on 'remote-update', therefore, if there wasn't any
+    // remote source at first call of ready(), state.loaded is going to
+    // remain false, since ready isn't executed again.
     self.db.once('remote-update', () => self.setState({ loaded: true }))
 
-    // todo: This throws with "Decoded message not valid"
     let db = this.getInstance().db
     let localWriterKey = db.local.key
     db.authorized(localWriterKey, (err, res) => {
-      console.log('at db.authorized', res)
       if (err) throw err
       if (res) self.setState({ authorized: true })
     })
@@ -47,7 +50,8 @@ Archive.prototype._ready = async function (done) {
       self.startShare()
     }
 
-    this.state.localKey = datenc.toStr(this.db.local.key)
+    this.localKey = this.db.local.key
+    this.state.localKey = datenc.toStr(this.localKey)
 
     done()
   })
@@ -55,7 +59,7 @@ Archive.prototype._ready = async function (done) {
 
 Archive.prototype.makePersistentMount = async function (type, prefix, key, opts) {
   await this.ready()
-  if (!this.isAuthorized()) throw new Error('Archive is not writable.')
+  if (!(await this.isAuthorized())) throw new Error('Archive is not writable.')
   const archive = await this.addMount({ type, prefix, key, opts })
   await this.instance.addMount({ type, prefix, key: archive.key })
   return archive
@@ -142,8 +146,16 @@ Archive.prototype.isLoaded = function () {
   return this.state.loaded
 }
 
-Archive.prototype.isAuthorized = function () {
-  return this.isLoaded() && this.state.authorized
+Archive.prototype.isAuthorized = async function () {
+  await this.ready()
+  self = this
+  return new Promise((resolve, reject) => {
+    this.db.authorized(this.localKey, (err, res) => {
+      if (err) reject(err)
+      self.setState({ authorized: res })
+      resolve(res)
+    })
+  })
 }
 
 Archive.prototype.setShare = async function (share) {
@@ -206,4 +218,19 @@ Archive.prototype.authorizeWriter = function (key) {
       })
     })
   })
+}
+
+Archive.prototype._isAuthorized = async function () {
+  // todo: This throws with "Decoded message not valid"
+  let db = this.getInstance().db
+  let localWriterKey = db.local.key
+  let ret
+  db.authorized(localWriterKey, (err, res) => {
+    console.log('at db.authorized', res)
+    if (err) throw err
+    if (res) self.setState({ authorized: true })
+    console.log('at db.authorized', res)
+    ret = res
+  })
+  console.log('_isAuthorized:', ret)
 }
