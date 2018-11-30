@@ -10,7 +10,7 @@ module.exports = Archive
 function Archive (library, type, instance, state) {
   if (!(this instanceof Archive)) return new Archive(library, type, instance, state)
   const self = this
-  this._loaded = false
+  this._opened = false
 
   this.instance = instance
   this.db = instance.db
@@ -28,33 +28,31 @@ inherits(Archive, EventEmitter)
 Archive.prototype._ready = async function (done) {
   const self = this
   this.instance.ready(async () => {
-    if (self._loaded) return
-    self._loaded = true
+    if (!self._opened) await init()
+  })
+
+  async function init () {
+    self._opened = true
     await self.loadMounts()
 
-    // Question: What is state.loaded supposed to indicate?
-    // As I (matze) understand the code, the following line is only
-    // executed on 'remote-update', therefore, if there wasn't any
-    // remote source at first call of ready(), state.loaded is going to
-    // remain false, since ready isn't executed again.
-    self.db.once('remote-update', () => self.setState({ loaded: true }))
-
-    let db = this.getInstance().db
-    let localWriterKey = db.local.key
-    db.authorized(localWriterKey, (err, res) => {
-      if (err) throw err
-      if (res) self.setState({ authorized: true })
-    })
+    self.localKey = self.db.local.key
+    self.setState({ localKey: datenc.toStr(self.localKey) })
 
     if (self.getState().share) {
       self.startShare()
     }
 
-    this.localKey = this.db.local.key
-    this.state.localKey = datenc.toStr(this.localKey)
+    // The following callback is executed once the hyperdb has any heads
+    // available. For locally created dbs this is executed immediately,
+    // for remote dbs once the first data comes in.
+    self.db.heads(async () => {
+      await self._isAuthorized()
+      self.setState({ loaded: true })
+      self.emit('loaded')
+    })
 
     done()
-  })
+  }
 }
 
 Archive.prototype.makePersistentMount = async function (type, prefix, key, opts) {
@@ -148,7 +146,11 @@ Archive.prototype.isLoaded = function () {
 
 Archive.prototype.isAuthorized = async function () {
   await this.ready()
-  self = this
+  return this._isAuthorized()
+}
+
+Archive.prototype._isAuthorized = async function () {
+  const self = this
   return new Promise((resolve, reject) => {
     this.db.authorized(this.localKey, (err, res) => {
       if (err) reject(err)
@@ -175,7 +177,9 @@ Archive.prototype.startShare = async function () {
   const network = hyperdiscovery(instance.db)
   this.network = network
   this.emit('networkOpened', true)
-  network.on('connection', (peer) => this.emit('got peer', network.connected))
+  network.on('connection', (peer) => {
+    this.emit('got peer', network.connected)
+  })
 
   // todo: really always share all mounts? If decided compare with this.stopShare()!
   let mounts = await this.getMounts()
@@ -218,19 +222,4 @@ Archive.prototype.authorizeWriter = function (key) {
       })
     })
   })
-}
-
-Archive.prototype._isAuthorized = async function () {
-  // todo: This throws with "Decoded message not valid"
-  let db = this.getInstance().db
-  let localWriterKey = db.local.key
-  let ret
-  db.authorized(localWriterKey, (err, res) => {
-    console.log('at db.authorized', res)
-    if (err) throw err
-    if (res) self.setState({ authorized: true })
-    console.log('at db.authorized', res)
-    ret = res
-  })
-  console.log('_isAuthorized:', ret)
 }
