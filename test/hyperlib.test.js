@@ -78,124 +78,85 @@ tape('library: various getArchive-functions', async (t) => {
 })
 
 tape('library & archive: sharing archives', async (t) => {
-  const lib1 = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
-  const archive1 = await lib1.createArchive('hyperdrive')
-  const libB = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
-
-  t.equal(typeof(libB.addRemoteArchive), 'function')
-  archiveB = await libB.addRemoteArchive('hyperdrive', archive1.key)
-  t.deepEqual(archiveB.getState(), { primary: true, parent: null, authorized: false, loaded: false, share: true })
-
-  // establish listeners for network events
-  let networkEvents = {
-    archive1: {
-      opened: false,
-      peers: 0,
-      closed: false
-    },
-    archiveB: {
-      opened: false,
-      peers: 0,
-      closed: false
+  let opts = {
+    archiveTypes: { 
+      hyperdrive: Hyperdrive
     }
   }
-  archive1.on('networkOpened', (e) => {
-    networkEvents.archive1.opened = e
-  })
-  archive1.on('got peer', (e) => {
-    networkEvents.archive1.peers = e
-  })
-  archive1.on('networkClosed', (e) => {
-    networkEvents.archive1.closed = e
-  })
-  archiveB.on('networkOpened', (e) => {
-    networkEvents.archiveB.opened = e
-  })
-  archiveB.on('got peer', (e) => {
-    networkEvents.archiveB.peers = e
-  })
-  archiveB.on('networkClosed', (e) => {
-    networkEvents.archiveB.closed = e
-  })
+  const lib1 = Library(ram, opts)
+  const lib2 = Library(ram, opts)
+
+  const archive1 = await lib1.createArchive('hyperdrive')
+  const archive2 = await lib2.addRemoteArchive('hyperdrive', archive1.key)
+
+  t.deepEqual(archive2.getState(), { primary: true, parent: null, authorized: false, loaded: false, share: true })
+
+  let stats1 = trackStats(archive1)
+  let stats2 = trackStats(archive2)
+
+  function trackStats (archive) {
+    let stats = {
+      opened: false,
+      peers: false,
+      closed: false
+    }
+    archive.on('network:open', () => { stats.opened = true })
+    archive.on('network:close', () => { stats.closed = true })
+    // Todo: When tracking peers as a number, it switches between 1 and 2 per test run.
+    archive.on('network:peer', () => { stats.peers = true })
+    return stats
+  }
+
+  await archive1.ready()
+  await archive2.ready()
 
   // For what ever reason, network handles leak without this calls.
   // TODO: Correct this behaviour
-  await archive1.getMounts()
-  await archiveB.getMounts()
+  // Edit (Frando): Seems to be fixed by correctly closing the networks.
+  // archive1.getMounts()
+  // archive2.getMounts()
 
-  t.equal(typeof(archive1.setShare), 'function', 'is archive.setShare() defined as function?')
   await archive1.setShare(true)
-  t.deepEqual(
-    await archive1.getState(),
-    { primary: true, parent: null, authorized: true, loaded: true, share: true, localKey: archive1.key },
-    'Does archive.setShare() result in archive.state.shared = true'
-  )
 
-  t.equal(await archiveB.isAuthorized(), false, 'is newly added archive unauthorized?')
+  await archive2.instance.writeFile('/foo.txt', 'bar')
+  let text = await archive2.instance.readFile('/foo.txt')
+  t.equal(text.toString(), 'bar', 'file read on archive2')
 
-  let buf1
-  archiveB.instance.writeFile('/foo.txt', 'bar', (err) => {
-    if (err) throw err
-    archiveB.instance.readdir('/', (err, list) => {
-      if (err) throw err
-      archiveB.instance.readFile('/foo.txt', 'utf-8', (err, data) => {
-        if (err) throw err
-        buf1 = data
-      })
-    })
+  let auth = await archive2.isAuthorized()
+  t.equal(auth, false, 'archive2 not authorized')
+
+  await archive1.authorizeWriter(archive2.localKey)
+
+  let steps = 0
+  archive2.db.once('append', async () => {
+    let auth = await archive2.isAuthorized()
+    t.equal(auth, true, 'archive2 authorized')
+    maybeNext(++steps)
   })
 
-  await archive1.authorizeWriter(await datenc.toStr(archiveB.db.local.key))
-
-  let buf2
-  archiveB.instance.writeFile('/hello.txt', 'world', (err) => {
-    if (err) throw err
-    archiveB.instance.readdir('/', (err, list) => {
-      if (err) throw err
-      archiveB.instance.readFile('/hello.txt', 'utf-8', (err, data) => {
-        if (err) throw err
-        buf2 = data
-      })
-    })
+  archive1.db.once('append', async () => {
+    let text = await archive1.instance.readFile('/foo.txt')
+    t.equal(text.toString(), 'bar', 'file read on archive1 after sync')
+    maybeNext(++steps)
   })
 
-  let timer = setTimeout(async () => {
-    archive1.instance.readdir('/', (err, list) => {
-      if (err) throw err
-      archive1.instance.readFile('/foo.txt', 'utf-8', (err, data) => {
-        t.equal(buf1, data, 'data synced from authorized archive to authorizing archive?')
-      })
-      archive1.instance.readFile('/hello.txt', 'utf-8', (err, data) => {
-        t.equal(buf2, data, 'data synced from authorized archive to authorizing archive?')
-      })
-    })
-    t.equal(await archiveB.isAuthorized(), true, 'Is authorization-information synced from authorizing to authorized archive?')
-  }, 250)
+  function maybeNext (steps) {
+    if (steps === 2) checkNetwork()
+  }
 
-  let timer1 = setTimeout(() => {
-    t.deepEqual(
-      archiveB.getState(),
-      { primary: true, parent: null, authorized: true, loaded: true, share: true, localKey: datenc.toStr(archiveB.db.local.key) },
-      'Does ArchiveB state match the performed tasks?'
-    )
-  }, 500)
+  async function checkNetwork () {
+    let expected = { opened: true, peers: true, closed: false }
+    t.deepEqual(stats1, expected, 'archive1 open stats')
+    t.deepEqual(stats2, expected, 'archive2 open stats')
 
-  let interval = setInterval(() => {
-    if (archive1.getState().loaded === true && archiveB.getState().loaded === true) {
-      archive1.setShare(false)
-      archiveB.setShare(false)
-      clearInterval(interval)
-    }
-  }, 1000)
+    await archive1.stopShare()
+    await archive2.stopShare()
 
-  let timer2 = setTimeout(() => {
-    t.deepEqual(networkEvents,
-      { archive1: { opened: true, peers: 1, closed: true },
-        archiveB: { opened: true, peers: 1, closed: true } }
-      , 'Were archive networks opened, closed and "got peer"-events fired?')
-  }, 3000)
-
-  t.end()
+    expected = { opened: true, peers: true, closed: true }
+    t.deepEqual(stats1, expected, 'archive1 close stats')
+    t.deepEqual(stats2, expected, 'archive2 close stats')
+    t.end()
+  }
 })
 
 tape('archive: info', async (t) => {
