@@ -7,7 +7,8 @@ module.exports = {
   chainStorage,
   folderName,
   hex,
-  asyncThunky
+  asyncThunky,
+  prom
 }
 
 function chainStorage (parent) {
@@ -64,4 +65,14 @@ function asyncThunky (fn) {
       })
     }
   }
+}
+
+function prom () {
+  let done
+  const promise = new Promise((resolve, reject) => {
+    done = (err, data) => {
+      err ? reject(err) : resolve(data)
+    }
+  })
+  return [promise, done]
 }

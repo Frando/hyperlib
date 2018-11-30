@@ -3,7 +3,7 @@ const inherits = require('inherits')
 const hyperdiscovery = require('hyperdiscovery')
 const datenc = require('dat-encoding')
 
-const { hex, asyncThunky } = require('./util')
+const { hex, asyncThunky, prom } = require('./util')
 
 module.exports = Archive
 
@@ -123,7 +123,7 @@ Archive.prototype.getInfo = async function () {
 Archive.prototype.setInfo = async function (info) {
   if (!this.isLoaded()) return
   if (this.instance.setInfo) return this.instance.setInfo(info)
-  this.emit('set:info', info)
+  this.emit('info:set', info)
   return null
 }
 
@@ -133,7 +133,7 @@ Archive.prototype.getState = function () {
 
 Archive.prototype.setState = function (state) {
   this.state = { ...this.state, ...state }
-  this.emit('set:state', this.state)
+  this.emit('state:set', this.state)
 }
 
 Archive.prototype.isPrimary = function () {
@@ -176,9 +176,9 @@ Archive.prototype.startShare = async function () {
   // todo: make pluggable.
   const network = hyperdiscovery(instance.db)
   this.network = network
-  this.emit('networkOpened', true)
+  this.emit('network:open')
   network.on('connection', (peer) => {
-    this.emit('got peer', network.connected)
+    this.emit('network:peer', peer)
   })
 
   // todo: really always share all mounts? If decided compare with this.stopShare()!
@@ -190,14 +190,23 @@ Archive.prototype.startShare = async function () {
 
 Archive.prototype.stopShare = async function () {
   await this.ready()
-  if (this.network) {
-    this.network.close()
-    this.emit('networkClosed', true)
-  }
+  if (!this.network) return
+
+  const [promise, done] = prom()
+
+  // Stop sharing mounts.
   let mounts = await this.getMounts()
   mounts.forEach(mount => {
     mount.stopShare()
   })
+
+  // Close own network.
+  this.network.close(() => {
+    this.emit('network:close')
+    done()
+  })
+
+  return promise
 }
 
 Archive.prototype.authorizeWriter = function (key) {
