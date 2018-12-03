@@ -35,7 +35,6 @@ tape('create Library and register HyperdriveWrapper as archiveType', async (t) =
 tape('library: getArchiveConstructor', async (t) => {
   const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
 
-  t.equal(typeof(lib.getArchiveConstructor('hyperdrive')), 'function')
   let errThrown = false
   try {
     lib.getArchiveConstructor('foo')
@@ -50,7 +49,6 @@ tape('library: getArchiveConstructor', async (t) => {
 tape('library: createArchive', async (t) => {
   const lib = Library(ram, { archiveTypes: { hyperdrive: Hyperdrive } })
   const archive = await lib.createArchive('hyperdrive')
-  t.equal(typeof(archive), 'object')
   t.equal(typeof(archive.key), 'string')
   t.equal(archive.key.length, 64)
   t.deepEqual(archive, lib.archives[archive.key])
@@ -79,7 +77,7 @@ tape('library: various getArchive-functions', async (t) => {
 
 tape('library & archive: sharing archives', async (t) => {
   let opts = {
-    archiveTypes: { 
+    archiveTypes: {
       hyperdrive: Hyperdrive
     }
   }
@@ -89,7 +87,8 @@ tape('library & archive: sharing archives', async (t) => {
   const archive1 = await lib1.createArchive('hyperdrive')
   const archive2 = await lib2.addRemoteArchive('hyperdrive', archive1.key)
 
-  t.deepEqual(archive2.getState(), { primary: true, parent: null, authorized: false, loaded: false, share: true })
+  t.equal(archive2.getState().share, true)
+  t.equal(archive2.getState().authorized, false)
 
   let stats1 = trackStats(archive1)
   let stats2 = trackStats(archive2)
@@ -177,41 +176,25 @@ tape('archive: mounts', async (t) => {
   t.deepEqual(mounts, [])
 
   const archive01 = await archive.makePersistentMount('hyperdrive')
-  t.equal(typeof(archive01), 'object', 'Has a hyperdrive been mounted to archive as subarchive?')
-  await archive01.isAuthorized()
-  t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: false, share: false, localKey: archive01.key } )
-  await archive01.ready()
-  console.log(archive01._loaded)
-  t.deepEqual(await archive01.getState(), { primary: false, parent: archive.key, authorized: true, loaded: true, share: false, localKey: archive01.key } )
-
-  archive.loadMounts() // no return value
-
   mounts = await archive.getMounts()
+  t.deepEqual(archive01, mounts[0], 'Has a hyperdrive been mounted to archive as subarchive?')
+  t.equal(archive01.getState().primary, false)
+  t.equal(archive01.getState().parent, archive.key)
+  t.equal(await archive01.isAuthorized(), true)
+  t.equal(archive01.getState().loaded, true)
+
   const mountPrefix= mounts[0].prefix
   t.notEqual(mountPrefix, undefined, 'Does mount have a defined prefix?')
   const mount = await archive.getMount(mountPrefix)
   t.deepEqual([Object.keys(mounts[0]), mounts[0].key], [Object.keys(mount), mount.key], 'Do getMounts and getMount return same kind of objects?')
 
   const mountInstance = archive01.getMountInstance(mountPrefix)
-  t.notDeepEqual(mountInstance, {})
-  t.equal(mountInstance instanceof HyperdriveWrapper, true)
+  t.notDeepEqual(mountInstance, {}, 'Does archive.getMountInstance() return a defined value?')
+  t.equal(mountInstance instanceof HyperdriveWrapper, true, 'Does archive.getMountInstance() return a hyperdrive as mounted?')
 
   t.equal(archive01.isPrimary(), false)
   archive01.setState({ primary: true })
   t.equal(archive01.isPrimary(), true)
 
-  /*
-  let archive1Info = await archive1.getInfo()
-  t.deepEqual(archive1Info, {})
-  await archive1.setInfo({ foo: 'bar' })
-  let timeout = setTimeout( async () => {
-    try {
-      archive1Info = await archive1.getInfo()
-    } catch (err) {
-      archive1Info = err
-    }
-    t.deepEqual(archive1Info, { foo: 'bar' } || Error('Hyperdrive has not any setInfo()'))
-  }, 500)
-  */
   t.end()
 })
