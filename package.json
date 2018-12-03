@@ -4,7 +4,8 @@
   "description": "Manage hyperdb-based archives.",
   "main": "index.js",
   "scripts": {
-    "test": "tape test/*.js"
+    "test": "tape test/*.js",
+    "coverage": "nyc tape test/*.js; nyc report --reporter=html"
   },
   "repository": {
     "type": "git",
@@ -22,10 +23,21 @@
   },
   "homepage": "https://github.com/Frando/hyperlib#readme",
   "dependencies": {
+    "@jimpick/hyperdrive-next": "github:Frando/hyperdrive#livestreaming2",
     "dat-encoding": "^5.0.1",
+    "hypercore": "^6.21.0",
     "hypercore-crypto": "^1.0.0",
+    "hyperdb": "^3.5.0",
     "hyperdiscovery": "^8.0.0",
+    "hyperdrive": "github:Frando/hyperdrive#livestreaming",
     "inherits": "^2.0.3",
+    "pify": "^4.0.1",
+    "pump": "^3.0.0",
     "thunky": "^1.0.3"
+  },
+  "devDependencies": {
+    "leaked-handles": "^5.2.0",
+    "random-access-memory": "^3.0.0",
+    "tape": "^4.9.1"
   }
 }

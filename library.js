@@ -9,17 +9,33 @@ module.exports = Library
 
 function Library (storage, opts) {
   if (!(this instanceof Library)) return new Library(storage, opts)
+
   opts = opts || {}
 
   this.storage = opts.storage || chainStorage(storage)
   this.archives = {}
-  this.archiveTypes = opts.archiveTypes || {}
+  // this.archiveTypes = opts.archiveTypes || {}
+  this.archiveTypes = this._properArchiveTypes(opts.archiveTypes)
   this.ready = asyncThunky(this._ready.bind(this))
 }
 inherits(Library, EventEmitter)
 
 Library.prototype._ready = function (done) {
   done()
+}
+
+Library.prototype._properArchiveTypes = function (archiveTypes) {
+  // aim: prevent registering archiveTypes directly,
+  // i.e. archiveTypes need to be an Object with the archive Types as children
+  // TODO: Improve solution
+  if (!archiveTypes) return {}
+  if (archiveTypes.ready) {
+    // let ret = {}
+    // ret[archiveTypes.constructor.name] = archiveTypes
+    // return ret
+    throw new Error('archiveTypes need to be provided as children')
+  }
+  return archiveTypes
 }
 
 Library.prototype.getArchiveConstructor = function (type) {
@@ -55,6 +71,7 @@ Library.prototype.addArchive = async function (type, key, opts, status) {
   status = Object.assign({}, defaultStatus, status)
 
   const instance = this.makeInstance(type, key, opts)
+
   const archive = Archive(this, type, instance, status)
   await this.pushArchive(archive)
 
