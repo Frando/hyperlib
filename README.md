@@ -1,3 +1,5 @@
+**NOTE: This is outdated and not developed further. Use (corestore)[https://github.com/andrewosh/corestore] and/or the [Dat SDK](https://github.com/datproject/sdk/) instaed.
+
 # hyperlib
 
 Manage many hyperdbs or hyperdb based modules (like hyperdrives). Archives can have mounts, pointers to other archives. 
