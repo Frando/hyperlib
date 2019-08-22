@@ -1,4 +1,4 @@
-**NOTE: This is outdated and not developed further. Use (corestore)[https://github.com/andrewosh/corestore] and/or the [Dat SDK](https://github.com/datproject/sdk/) instaed.
+**NOTE: This is outdated and not developed further. Use [corestore](https://github.com/andrewosh/corestore) and/or the [Dat SDK](https://github.com/datproject/sdk/) instead.**
 
 # hyperlib
 
